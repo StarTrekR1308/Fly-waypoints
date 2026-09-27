@@ -521,31 +521,50 @@ export const FlySimulation3D: React.FC<FlySimulation3DProps> = ({
           // 100% AUTONOMOUS FLY BRAIN CONTROL
           const out = brain.step(angleDiff, distToWp, deltaDist, agent.speed);
 
-          // Fly dynamics:
-          agent.heading += out.turn * 0.07;
-          agent.roll = THREE.MathUtils.lerp(agent.roll, -out.turn * 0.45, 0.12);
-          agent.pitch = THREE.MathUtils.lerp(agent.pitch, (targetWp.y - agent.y) * 0.12, 0.08);
+          // Echte Fliegen-Aerodynamik & Biomechanik:
+          // 1. Kurvenflug mit Kurvenneigung (Banking / Roll)
+          agent.heading += out.turn * 0.085;
+          agent.roll = THREE.MathUtils.lerp(agent.roll, -out.turn * 0.62, 0.15);
 
-          const forwardVelocity = Math.max(0.18, out.thrust * 0.32);
+          // 2. Nickwinkel (Pitch) gekoppelt an Steigflug & Vorwärtsschub
+          const targetPitch = (targetWp.y - agent.y) * 0.14 - 0.04;
+          agent.pitch = THREE.MathUtils.lerp(agent.pitch, targetPitch, 0.1);
+
+          // 3. Vorwärtsgeschwindigkeit
+          const forwardVelocity = Math.max(0.18, out.thrust * 0.34);
           agent.speed = forwardVelocity;
           agent.x += Math.sin(agent.heading) * forwardVelocity;
           agent.z -= Math.cos(agent.heading) * forwardVelocity;
-          agent.y = THREE.MathUtils.lerp(agent.y, targetWp.y, 0.05);
+          agent.y = THREE.MathUtils.lerp(agent.y, targetWp.y, 0.06);
 
-          // Waypoint hit check
-          if (distToWp < targetWp.radius) {
+          // 4. Wegpunkt-Kollision & Glücksgefühl bei JEDEM Wegpunkt!
+          const hitRadius = targetWp.radius + 1.2;
+          if (distToWp < hitRadius) {
             const isGoal = targetWp.isGoal;
 
+            // Löst maximales Glücksgefühl im Fliegengehirn aus (Dopamin PAM-γ5 = 100%)
+            brain.triggerWaypointReward(Boolean(isGoal));
+
+            // Belohnungs-Feuerwerk (Konfetti bei JEDEM der 6 Wegpunkte + Finales Ziel!)
             if (isGoal) {
               confetti({
-                particleCount: 120,
-                spread: 80,
-                origin: { y: 0.6 }
+                particleCount: 140,
+                spread: 90,
+                origin: { y: 0.6 },
+                colors: ['#f59e0b', '#fbbf24', '#10b981', '#06b6d4']
               });
               setTimeout(() => {
                 resetAgent(true);
-              }, 1200);
+              }, 1400);
             } else {
+              confetti({
+                particleCount: 45,
+                spread: 60,
+                origin: { y: 0.7 },
+                colors: ['#10b981', '#34d399', '#06b6d4', '#60a5fa']
+              });
+
+              // Nächster Wegpunkt
               activeWpIndexRef.current = Math.min(waypoints.length - 1, currentWpIndex + 1);
               lastDistRef.current = Math.hypot(
                 waypoints[activeWpIndexRef.current].x - agent.x,
@@ -555,39 +574,43 @@ export const FlySimulation3D: React.FC<FlySimulation3DProps> = ({
           }
 
           // Boundary safeguard
-          if (Math.abs(agent.x) > 120 || Math.abs(agent.z) > 220) {
+          if (Math.abs(agent.x) > 130 || Math.abs(agent.z) > 240) {
             resetAgent(true);
             break;
           }
 
-          // Emit telemetry to UI
+          // Emit telemetry to UI (mit 100% Dopamin bei Erreichen)
+          const isMilestone = distToWp < hitRadius;
           onUpdateTelemetry({
             activeWp: activeWpIndexRef.current,
             distToWp,
             deltaDist,
-            isHappy: out.isHappy,
-            dopamine: out.dopamine,
-            octopamine: out.octopamine,
+            isHappy: isMilestone ? true : out.isHappy,
+            dopamine: isMilestone ? 1.0 : out.dopamine,
+            octopamine: isMilestone ? 0.05 : out.octopamine,
             turn: out.turn,
             thrust: out.thrust,
             completedCount: activeWpIndexRef.current,
-            hasReachedGoal: Boolean(targetWp.isGoal && distToWp < targetWp.radius),
+            hasReachedGoal: Boolean(targetWp.isGoal && distToWp < hitRadius),
             generation: generationRef.current
           });
         }
       }
 
-      // 3D Object Transforms
-      flyGroup.position.set(agent.x, agent.y, agent.z);
+      // 3D Object Transforms & Biomechanisches Schwingen
+      const bodyWobble = Math.sin(agent.wingBeatPhase * 1.5) * 0.02;
+      flyGroup.position.set(agent.x, agent.y + bodyWobble, agent.z);
       flyGroup.rotation.y = agent.heading;
       flyGroup.rotation.z = agent.roll;
       flyGroup.rotation.x = agent.pitch;
 
-      // Realistic Wing kinematics
-      agent.wingBeatPhase += 0.8 + agent.speed * 2.5;
-      const wingA = Math.sin(agent.wingBeatPhase) * 0.7;
-      wingLeft.rotation.z = -Math.PI + 0.4 + wingA;
-      wingRight.rotation.z = Math.PI - 0.4 - wingA;
+      // Realistische asymmetrische Flügelkinematik:
+      // Bei Rechtskurven schlägt der linke Flügel mit höherer Amplitude, bei Linkskurven der rechte!
+      agent.wingBeatPhase += 0.9 + agent.speed * 2.8;
+      const wingA = Math.sin(agent.wingBeatPhase) * 0.75;
+      const turnBiasWing = (agent.roll) * 0.35; // Asymmetrie durch Kurvenneigung
+      wingLeft.rotation.z = -Math.PI + 0.4 + (wingA * (1.0 - turnBiasWing));
+      wingRight.rotation.z = Math.PI - 0.4 - (wingA * (1.0 + turnBiasWing));
 
       const hA = Math.sin(agent.wingBeatPhase + Math.PI / 2) * 0.5;
       haltereLeft.rotation.x = hA;

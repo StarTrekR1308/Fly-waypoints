@@ -332,25 +332,27 @@ export class FunctionalFlyBrain {
     const dna02 = this.neurons.get('720575940641200002')?.spikeRate || 0; // Turn R
     const dnb01 = this.neurons.get('720575940641200010')?.spikeRate || 0.5; // Thrust
 
-    // Berechne Netto-Lenkung
-    const turn = dna02 - dna01;
-    const thrust = Math.max(0.2, Math.min(1.0, dnb01 * 0.8 + 0.2));
+    // Berechne Netto-Lenkung mit biologischem Saccaden-Gain
+    // Stärkere Kurvenkopplung damit die Fliege agil wie in der Natur eindreht
+    const turnBias = (turnIntentR - turnIntentL) * 0.4;
+    const turn = Math.max(-1.0, Math.min(1.0, (dna02 - dna01) * 1.5 + turnBias));
+    const thrust = Math.max(0.3, Math.min(1.0, dnb01 * 0.8 + 0.3));
 
     // STDP Plastizität: Belohnung passt Synapsen-Gewichte an
     if (isApproaching) {
       for (const syn of this.synapses) {
         const pre = this.neurons.get(syn.pre);
         const post = this.neurons.get(syn.post);
-        if (pre && post && pre.spikeRate > 0.3 && post.spikeRate > 0.3) {
-          syn.weight = Math.min(2.5, syn.weight + 0.005);
+        if (pre && post && pre.spikeRate > 0.2 && post.spikeRate > 0.2) {
+          syn.weight = Math.min(2.8, syn.weight + 0.008);
         }
       }
     } else if (isDriftingAway) {
       for (const syn of this.synapses) {
         const pre = this.neurons.get(syn.pre);
         const post = this.neurons.get(syn.post);
-        if (pre && post && pre.spikeRate > 0.3 && post.spikeRate > 0.3) {
-          syn.weight = Math.max(0.2, syn.weight - 0.004);
+        if (pre && post && pre.spikeRate > 0.2 && post.spikeRate > 0.2) {
+          syn.weight = Math.max(0.2, syn.weight - 0.006);
         }
       }
     }
@@ -362,6 +364,29 @@ export class FunctionalFlyBrain {
       octopamine: this.octopamineLevel,
       isHappy: isApproaching
     };
+  }
+
+  /**
+   * Wird aufgerufen wenn ein Wegpunkt erreicht wird: Maximales Glücksgefühl!
+   */
+  public triggerWaypointReward(isFinalGoal: boolean) {
+    this.dopamineLevel = 1.0;
+    this.octopamineLevel = 0.05;
+
+    // PAM Dopamin-Neuronen maximal erregen
+    const pam = this.neurons.get('720575940632551201');
+    if (pam) {
+      pam.spikeRate = 1.0;
+      pam.voltage = 30; // Aktionspotential-Spike
+    }
+
+    // Verstärke alle erfolgreichen Annäherungs-Synapsen (Long-Term Potentiation)
+    const bonus = isFinalGoal ? 0.08 : 0.03;
+    for (const syn of this.synapses) {
+      if (syn.nt === 'dopamine' || syn.nt === 'acetylcholine') {
+        syn.weight = Math.min(3.0, syn.weight + bonus);
+      }
+    }
   }
 
   private setNeuronSpike(id: string, rate: number) {
