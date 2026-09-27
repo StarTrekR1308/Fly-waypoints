@@ -1,0 +1,6 @@
+{
+  "name": "Drosophila Biorobot Connectome 3D Simulation",
+  "description": "Interaktive 3D-Simulation eines bio-robotischen Fruchtfliegen-Gehirns (Drosophila melanogaster Connectome) mit Belohnungs- und Gefühlssystem (Glück/Trauer), 6 Wegpunkten, Live-Neuronenfirings und Python-Handoff.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
