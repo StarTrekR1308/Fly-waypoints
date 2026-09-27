@@ -522,46 +522,48 @@ export const FlySimulation3D: React.FC<FlySimulation3DProps> = ({
           const out = brain.step(angleDiff, distToWp, deltaDist, agent.speed);
 
           // Echte Fliegen-Aerodynamik & Biomechanik:
-          // 1. Kurvenflug mit Kurvenneigung (Banking / Roll)
+          // 1. Kurvenflug: Heading steuert exakt dorthin, wo die Fliege hinfliegt!
           agent.heading += out.turn * 0.085;
-          agent.roll = THREE.MathUtils.lerp(agent.roll, -out.turn * 0.62, 0.15);
+          // Sanfte Kurvenneigung (Roll)
+          agent.roll = THREE.MathUtils.lerp(agent.roll, -out.turn * 0.45, 0.15);
 
-          // 2. Nickwinkel (Pitch) gekoppelt an Steigflug & Vorwärtsschub
-          const targetPitch = (targetWp.y - agent.y) * 0.14 - 0.04;
+          // 2. Nickwinkel (Pitch)
+          const targetPitch = THREE.MathUtils.clamp((targetWp.y - agent.y) * 0.12, -0.25, 0.25);
           agent.pitch = THREE.MathUtils.lerp(agent.pitch, targetPitch, 0.1);
 
-          // 3. Vorwärtsgeschwindigkeit
-          const forwardVelocity = Math.max(0.18, out.thrust * 0.34);
+          // 3. Vorwärtsgeschwindigkeit: Kopf & Flugvektor sind 1:1 gekoppelt
+          const forwardVelocity = Math.max(0.18, out.thrust * 0.33);
           agent.speed = forwardVelocity;
           agent.x += Math.sin(agent.heading) * forwardVelocity;
           agent.z -= Math.cos(agent.heading) * forwardVelocity;
           agent.y = THREE.MathUtils.lerp(agent.y, targetWp.y, 0.06);
 
-          // 4. Wegpunkt-Kollision & Glücksgefühl bei JEDEM Wegpunkt!
+          // 4. Wegpunkt-Kollision: Dezente Belohnung unterwegs, Maximaler Zucker-Reward am Ende
           const hitRadius = targetWp.radius + 1.2;
           if (distToWp < hitRadius) {
-            const isGoal = targetWp.isGoal;
+            const isGoal = Boolean(targetWp.isGoal);
 
-            // Löst maximales Glücksgefühl im Fliegengehirn aus (Dopamin PAM-γ5 = 100%)
-            brain.triggerWaypointReward(Boolean(isGoal));
+            // Moduliertes Dopamin: sanft bei Wegpunkten (0.70), Maximum bei Zucker (1.0)
+            brain.triggerWaypointReward(isGoal);
 
-            // Belohnungs-Feuerwerk (Konfetti bei JEDEM der 6 Wegpunkte + Finales Ziel!)
+            // Reduziertes, dezentes Konfetti (kein Bildschirm-Spam)
             if (isGoal) {
               confetti({
-                particleCount: 140,
-                spread: 90,
+                particleCount: 50,
+                spread: 70,
                 origin: { y: 0.6 },
-                colors: ['#f59e0b', '#fbbf24', '#10b981', '#06b6d4']
+                colors: ['#f59e0b', '#fbbf24', '#10b981']
               });
               setTimeout(() => {
                 resetAgent(true);
               }, 1400);
             } else {
+              // Sehr dezent: nur ein kleiner Partikelschimmer bei Zwischen-Wegpunkten
               confetti({
-                particleCount: 45,
-                spread: 60,
-                origin: { y: 0.7 },
-                colors: ['#10b981', '#34d399', '#06b6d4', '#60a5fa']
+                particleCount: 15,
+                spread: 45,
+                origin: { y: 0.75 },
+                colors: ['#10b981', '#06b6d4']
               });
 
               // Nächster Wegpunkt
@@ -579,14 +581,15 @@ export const FlySimulation3D: React.FC<FlySimulation3DProps> = ({
             break;
           }
 
-          // Emit telemetry to UI (mit 100% Dopamin bei Erreichen)
+          // Emit telemetry to UI (mit realem Dopaminspiegel)
           const isMilestone = distToWp < hitRadius;
+          const currentDopamine = isMilestone ? (targetWp.isGoal ? 1.0 : 0.70) : out.dopamine;
           onUpdateTelemetry({
             activeWp: activeWpIndexRef.current,
             distToWp,
             deltaDist,
             isHappy: isMilestone ? true : out.isHappy,
-            dopamine: isMilestone ? 1.0 : out.dopamine,
+            dopamine: currentDopamine,
             octopamine: isMilestone ? 0.05 : out.octopamine,
             turn: out.turn,
             thrust: out.thrust,
@@ -597,12 +600,13 @@ export const FlySimulation3D: React.FC<FlySimulation3DProps> = ({
         }
       }
 
-      // 3D Object Transforms & Biomechanisches Schwingen
+      // 3D Object Transforms: Kopf zeigt immer exakt in Flugrichtung (-Z in local space)
       const bodyWobble = Math.sin(agent.wingBeatPhase * 1.5) * 0.02;
       flyGroup.position.set(agent.x, agent.y + bodyWobble, agent.z);
+      flyGroup.rotation.order = 'YXZ';
       flyGroup.rotation.y = agent.heading;
-      flyGroup.rotation.z = agent.roll;
       flyGroup.rotation.x = agent.pitch;
+      flyGroup.rotation.z = agent.roll;
 
       // Realistische asymmetrische Flügelkinematik:
       // Bei Rechtskurven schlägt der linke Flügel mit höherer Amplitude, bei Linkskurven der rechte!

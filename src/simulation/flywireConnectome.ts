@@ -261,14 +261,15 @@ export class FunctionalFlyBrain {
     const isDriftingAway = deltaDistance > 0.01;
 
     // Belohnungssystem aktualisieren:
-    // Nähert sich die Fliege -> PAM Dopamin-Neuronen feuern!
+    // Nähert sich die Fliege -> PAM Dopamin-Neuronen feuern graduell!
     // Entfernt sie sich -> PPL1 Octopamin feuert!
+    // Gestufter Dopaminpegel, damit das finale Zucker-Ziel den absoluten Höhepunkt darstellt
     if (isApproaching) {
-      this.dopamineLevel = Math.min(1.0, this.dopamineLevel + 0.08);
-      this.octopamineLevel = Math.max(0.1, this.octopamineLevel - 0.05);
+      this.dopamineLevel = Math.min(0.75, this.dopamineLevel + 0.025);
+      this.octopamineLevel = Math.max(0.1, this.octopamineLevel - 0.04);
     } else if (isDriftingAway) {
-      this.dopamineLevel = Math.max(0.1, this.dopamineLevel - 0.06);
-      this.octopamineLevel = Math.min(1.0, this.octopamineLevel + 0.08);
+      this.dopamineLevel = Math.max(0.12, this.dopamineLevel - 0.035);
+      this.octopamineLevel = Math.min(0.85, this.octopamineLevel + 0.05);
     }
 
     // Sensorische Eingänge berechnen
@@ -367,21 +368,23 @@ export class FunctionalFlyBrain {
   }
 
   /**
-   * Wird aufgerufen wenn ein Wegpunkt erreicht wird: Maximales Glücksgefühl!
+   * Wird aufgerufen wenn ein Wegpunkt erreicht wird:
+   * Wegpunkte 1-6 geben einen sanften Belohnungs-Schubs (~0.70 Dopamin).
+   * Das finale ZUCKER-Ziel gibt den ultimativen 100% Dopamin-Spike!
    */
   public triggerWaypointReward(isFinalGoal: boolean) {
-    this.dopamineLevel = 1.0;
+    this.dopamineLevel = isFinalGoal ? 1.0 : 0.70;
     this.octopamineLevel = 0.05;
 
-    // PAM Dopamin-Neuronen maximal erregen
+    // PAM Dopamin-Neuronen ansteuern
     const pam = this.neurons.get('720575940632551201');
     if (pam) {
-      pam.spikeRate = 1.0;
-      pam.voltage = 30; // Aktionspotential-Spike
+      pam.spikeRate = isFinalGoal ? 1.0 : 0.70;
+      pam.voltage = isFinalGoal ? 30 : -10; // Deutlicherer Spike bei echtem Zucker
     }
 
     // Verstärke alle erfolgreichen Annäherungs-Synapsen (Long-Term Potentiation)
-    const bonus = isFinalGoal ? 0.08 : 0.03;
+    const bonus = isFinalGoal ? 0.08 : 0.02;
     for (const syn of this.synapses) {
       if (syn.nt === 'dopamine' || syn.nt === 'acetylcholine') {
         syn.weight = Math.min(3.0, syn.weight + bonus);
